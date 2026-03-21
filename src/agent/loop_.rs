@@ -2327,7 +2327,7 @@ pub(crate) async fn agent_turn(
         None,
         None,
         None,
-excluded_tools,
+        excluded_tools,
         dedup_exempt_tools,
         activated_tools,
         model_switch_callback,
@@ -2638,7 +2638,7 @@ pub(crate) async fn run_tool_call_loop(
     on_delta: Option<tokio::sync::mpsc::Sender<String>>,
     hooks: Option<&crate::hooks::HookRunner>,
     excluded_tools: &[String],
-dedup_exempt_tools: &[String],
+    dedup_exempt_tools: &[String],
     activated_tools: Option<&std::sync::Arc<std::sync::Mutex<crate::tools::ActivatedToolSet>>>,
     model_switch_callback: Option<ModelSwitchCallback>,
     pacing: &crate::config::PacingConfig,
@@ -2650,7 +2650,7 @@ dedup_exempt_tools: &[String],
     };
 
     let turn_id = Uuid::new_v4().to_string();
-let loop_started_at = Instant::now();
+    let loop_started_at = Instant::now();
     let loop_ignore_tools: HashSet<&str> = pacing
         .loop_ignore_tools
         .iter()
@@ -3905,7 +3905,7 @@ pub async fn run(
             ChatMessage::user(&enriched),
         ];
 
-// Compute per-turn excluded MCP tools from tool_filter_groups.
+        // Compute per-turn excluded MCP tools from tool_filter_groups.
         let excluded_tools =
             compute_excluded_mcp_tools(&tools_registry, &config.agent.tool_filter_groups, &msg);
 
@@ -4135,7 +4135,7 @@ pub async fn run(
             // Compute per-turn excluded MCP tools from tool_filter_groups.
             let excluded_tools = compute_excluded_mcp_tools(
                 &tools_registry,
-&config.agent.tool_filter_groups,
+                &config.agent.tool_filter_groups,
                 &user_input,
             );
 
@@ -5056,7 +5056,7 @@ mod tests {
             None,
             None,
             &[],
-&[],
+            &[],
             None,
             None,
             &crate::config::PacingConfig::default(),
@@ -5107,7 +5107,7 @@ mod tests {
             None,
             None,
             &[],
-&[],
+            &[],
             None,
             None,
             &crate::config::PacingConfig::default(),
@@ -5152,7 +5152,7 @@ mod tests {
             None,
             None,
             &[],
-&[],
+            &[],
             None,
             None,
             &crate::config::PacingConfig::default(),
@@ -5283,7 +5283,7 @@ mod tests {
             None,
             None,
             &[],
-&[],
+            &[],
             None,
             None,
             &crate::config::PacingConfig::default(),
@@ -5357,6 +5357,7 @@ mod tests {
             &[],
             None,
             None,
+            &crate::config::PacingConfig::default(),
         )
         .await
         .expect("cron_add delivery defaults should be injected");
@@ -5419,6 +5420,7 @@ mod tests {
             &[],
             None,
             None,
+            &crate::config::PacingConfig::default(),
         )
         .await
         .expect("explicit delivery mode should be preserved");
@@ -5473,7 +5475,7 @@ mod tests {
             None,
             None,
             &[],
-&[],
+            &[],
             None,
             None,
             &crate::config::PacingConfig::default(),
@@ -5546,6 +5548,7 @@ mod tests {
             &[],
             None,
             None,
+            &crate::config::PacingConfig::default(),
         )
         .await
         .expect("non-interactive shell should succeed for low-risk command");
@@ -5606,6 +5609,7 @@ mod tests {
             &exempt,
             None,
             None,
+            &crate::config::PacingConfig::default(),
         )
         .await
         .expect("loop should finish with exempt tool executing twice");
@@ -5686,6 +5690,7 @@ mod tests {
             &exempt,
             None,
             None,
+            &crate::config::PacingConfig::default(),
         )
         .await
         .expect("loop should complete");
@@ -5740,7 +5745,7 @@ mod tests {
             None,
             None,
             &[],
-&[],
+            &[],
             None,
             None,
             &crate::config::PacingConfig::default(),
@@ -5825,6 +5830,7 @@ mod tests {
             &[],
             None,
             None,
+            &crate::config::PacingConfig::default(),
         )
         .await
         .expect("native tool-call text should be relayed through on_delta");
@@ -7810,6 +7816,7 @@ Let me check the result."#;
             &[],
             None,
             None,
+            &crate::config::PacingConfig::default(),
         )
         .await
         .expect("tool loop should complete");
