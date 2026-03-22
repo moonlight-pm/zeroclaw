@@ -50,8 +50,7 @@ jobs:
 
           tag="v${input_version}"
           if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-            echo "::error::Tag ${tag} already exists."
-            exit 1
+            echo "::warning::Tag ${tag} already exists — existing release will be replaced."
           fi
 
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
@@ -285,6 +284,12 @@ jobs:
         env:
           NOTES: ${{ needs.release-notes.outputs.notes }}
         run: printf '%s\n' "$NOTES" > release-notes.md
+
+      - name: Remove existing release if present
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
 
       - name: Create GitHub Release
         env:

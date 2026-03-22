@@ -26,8 +26,12 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
+      is_version_bump: ${{ steps.bump.outputs.is_version_bump }}
+      stable_tag: ${{ steps.bump.outputs.stable_tag }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 2
       - name: Compute beta version
         id: ver
         shell: bash
@@ -38,6 +42,23 @@ jobs:
           echo "version=${base_version}" >> "$GITHUB_OUTPUT"
           echo "tag=${beta_tag}" >> "$GITHUB_OUTPUT"
           echo "Beta release: ${beta_tag}"
+
+      - name: Detect version bump
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
+          previous=$(git show HEAD~1:Cargo.toml 2>/dev/null | sed -n 's/^version = "\([^"]*\)"/\1/p' | head -1 || echo "")
+
+          if [[ "$current" != "$previous" && -n "$current" ]]; then
+            echo "is_version_bump=true" >> "$GITHUB_OUTPUT"
+            echo "stable_tag=v${current}" >> "$GITHUB_OUTPUT"
+            echo "Version bumped from ${previous} to ${current}"
+          else
+            echo "is_version_bump=false" >> "$GITHUB_OUTPUT"
+            echo "stable_tag=" >> "$GITHUB_OUTPUT"
+          fi
 
   release-notes:
     name: Generate Release Notes
@@ -372,4 +393,104 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:beta-debian
           platforms: linux/amd64,linux/arm64
 
-  # Tweet removed — only stable releases should tweet (see tweet-release.yml).
+  # ── Stable release + post-publish (version bumps only) ────────────────
+  publish-stable:
+    name: Publish Stable Release
+    needs: [version, release-notes, build]
+    if: needs.version.outputs.is_version_bump == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: zeroclaw-*
+          path: artifacts
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec sha256sum {} + | sed 's|  \./[^/]*/|  |' > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name 'SHA256SUMS' \) -exec cp {} release-assets/ \;
+          cp install.sh release-assets/
+          ls -lh release-assets/
+
+      - name: Write release notes
+        env:
+          NOTES: ${{ needs.release-notes.outputs.notes }}
+        run: printf '%s\n' "$NOTES" > release-notes.md
+
+      - name: Create or replace stable GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ needs.version.outputs.stable_tag }}
+        run: |
+          # Remove existing release/tag if present (from prior partial run)
+          gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
+
+          gh release create "$TAG" release-assets/* \
+            --repo "${{ github.repository }}" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            --latest
+
+  redeploy-website-stable:
+    name: Trigger Website Redeploy (Stable)
+    needs: [version, publish-stable]
+    if: needs.version.outputs.is_version_bump == 'true' && !cancelled() && needs.publish-stable.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger website redeploy
+        env:
+          PAT: ${{ secrets.WEBSITE_REPO_PAT }}
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: token $PAT" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/zeroclaw-labs/zeroclaw-website/dispatches \
+            -d '{"event_type":"new-release","client_payload":{"install_script_url":"https://raw.githubusercontent.com/zeroclaw-labs/zeroclaw/master/install.sh"}}'
+
+  tweet:
+    name: Tweet Release
+    needs: [version, publish-stable, redeploy-website-stable]
+    if: needs.version.outputs.is_version_bump == 'true' && !cancelled() && needs.publish-stable.result == 'success'
+    uses: ./.github/workflows/tweet-release.yml
+    with:
+      release_tag: ${{ needs.version.outputs.stable_tag }}
+      release_url: https://github.com/zeroclaw-labs/zeroclaw/releases/tag/${{ needs.version.outputs.stable_tag }}
+    secrets: inherit
+
+  scoop:
+    name: Update Scoop Manifest
+    needs: [version, publish-stable]
+    if: needs.version.outputs.is_version_bump == 'true' && !cancelled() && needs.publish-stable.result == 'success'
+    uses: ./.github/workflows/pub-scoop.yml
+    with:
+      release_tag: ${{ needs.version.outputs.stable_tag }}
+      dry_run: false
+    secrets: inherit
+
+  aur:
+    name: Update AUR Package
+    needs: [version, publish-stable]
+    if: needs.version.outputs.is_version_bump == 'true' && !cancelled() && needs.publish-stable.result == 'success'
+    uses: ./.github/workflows/pub-aur.yml
+    with:
+      release_tag: ${{ needs.version.outputs.stable_tag }}
+      dry_run: false
+    secrets: inherit
+
+  homebrew:
+    name: Update Homebrew Core
+    needs: [version, publish-stable]
+    if: needs.version.outputs.is_version_bump == 'true' && !cancelled() && needs.publish-stable.result == 'success'
+    uses: ./.github/workflows/pub-homebrew-core.yml
+    with:
+      release_tag: ${{ needs.version.outputs.stable_tag }}
+      dry_run: false
+    secrets: inherit

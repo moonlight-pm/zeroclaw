@@ -20,8 +20,8 @@ Current maintainers with PR approval authority: `theonlyhennygod`, `JordanTheJet
 | --- | --- | --- |
 | `checks-on-pr.yml` | `pull_request` → `master` | Lint + test + build + security audit on every PR |
 | `cross-platform-build-manual.yml` | `workflow_dispatch` | Full platform build matrix (manual) |
-| `release-beta-on-push.yml` | `push` → `master` | Beta release on every master commit |
-| `release-stable-manual.yml` | `workflow_dispatch` | Stable release (manual, version-gated) |
+| `release-beta-on-push.yml` | `push` → `master` | Beta release on every master commit; **auto stable release + post-publish on version bumps** |
+| `release-stable-manual.yml` | `workflow_dispatch` | Stable release fallback (manual, version-gated) |
 
 ## Event Summary
 
@@ -55,14 +55,21 @@ Current maintainers with PR approval authority: `theonlyhennygod`, `JordanTheJet
    - `publish` job: generates `SHA256SUMS`, creates a GitHub pre-release with all artifacts. Artifact retention: 7 days.
    - `docker` job: builds multi-platform image (`linux/amd64,linux/arm64`) and pushes to `ghcr.io` with `:beta` and the versioned beta tag.
 3. This runs on every push to `master` without filtering. Every merged PR produces a beta pre-release.
+4. **If the push is a version bump** (Cargo.toml version changed from prior commit):
+   - `publish-stable` job: creates a stable (non-prerelease) GitHub Release with the `vX.Y.Z` tag. Replaces any existing release with that tag.
+   - `redeploy-website-stable` job: triggers website redeploy via repository dispatch.
+   - `tweet` job: calls `tweet-release.yml` to post the release announcement on X.
+   - `scoop` / `aur` / `homebrew` jobs: call their respective reusable workflows to update package manager manifests.
 
-### 3) Stable Release (manual)
+### 3) Stable Release (manual fallback)
+
+> **Note:** This workflow now serves as a **fallback**. Version bump pushes to master automatically trigger stable releases via `release-beta-on-push.yml`. Use this workflow when you need to manually re-release or if the automated path failed.
 
 1. Maintainer runs `release-stable-manual.yml` via `workflow_dispatch` with a version input (e.g. `0.2.0`).
 2. `validate` job checks:
    - Input matches semver `X.Y.Z` format.
    - `Cargo.toml` version matches input exactly.
-   - Tag `vX.Y.Z` does not already exist on the remote.
+   - If tag `vX.Y.Z` already exists, it warns and replaces the existing release (no longer fails hard).
 3. `build` job (matrix, same 4 targets as beta): compiles release binary.
 4. `publish` job: generates `SHA256SUMS`, creates a stable GitHub Release (not pre-release). Artifact retention: 14 days.
 5. `docker` job: pushes to `ghcr.io` with `:latest` and `:vX.Y.Z`.
@@ -100,25 +107,29 @@ flowchart TD
   E --> F["push event on master"]
 ```
 
-### Beta Release (on every master push)
+### Beta Release (on every master push) + Auto Stable on Version Bump
 
 ```mermaid
 flowchart TD
   A["Push to master"] --> B["release-beta-on-push.yml"]
-  B --> B1["version: compute v{x.y.z}-beta.{N}"]
-  B1 --> B2["build: 4 targets"]
+  B --> B1["version: compute beta tag + detect version bump"]
+  B1 --> B2["build: 6 targets"]
   B2 --> B3["publish: GitHub pre-release + SHA256SUMS"]
   B2 --> B4["docker: push ghcr.io :beta + versioned tag"]
+  B1 -->|"version bump detected"| S1["publish-stable: GitHub stable release"]
+  S1 --> S2["redeploy-website-stable"]
+  S1 --> S3["tweet: tweet-release.yml"]
+  S1 --> S4["scoop / aur / homebrew updates"]
 ```
 
-### Stable Release (manual)
+### Stable Release (manual fallback)
 
 ```mermaid
 flowchart TD
   A["workflow_dispatch: version=X.Y.Z"] --> B["release-stable-manual.yml"]
-  B --> B1["validate: semver + Cargo.toml + tag uniqueness"]
+  B --> B1["validate: semver + Cargo.toml + warn if tag exists"]
   B1 --> B2["build: 4 targets"]
-  B2 --> B3["publish: GitHub stable release + SHA256SUMS"]
+  B2 --> B3["publish: replace existing or create stable release"]
   B2 --> B4["docker: push ghcr.io :latest + :vX.Y.Z"]
 ```
 
@@ -126,5 +137,5 @@ flowchart TD
 
 1. **Quality gate failing on PR**: check `lint` job for formatting/clippy issues; check `test` job for test failures; check `build` job for compile errors; check `security` job for audit/deny failures.
 2. **Beta release not appearing**: confirm the push landed on `master` (not another branch); check `release-beta-on-push.yml` run status.
-3. **Stable release failing at validate**: ensure `Cargo.toml` version matches the input version and the tag does not already exist.
+3. **Stable release failing at validate**: ensure `Cargo.toml` version matches the input version. Existing tags are now handled gracefully (warn + replace).
 4. **Full matrix build needed**: run `cross-platform-build-manual.yml` manually from the Actions tab.
