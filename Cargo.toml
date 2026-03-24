@@ -280,8 +280,8 @@ ci-all = [
 
 [profile.release]
 opt-level = "z"      # Optimize for size
-lto = "thin"         # "fat" causes recursion_limit overflow with matrix-sdk async state machines
-codegen-units = 8    # Higher than upstream (1) to avoid recursion_limit overflow with matrix-sdk
+lto = "fat"          # Maximum cross-crate optimization for smaller binaries
+codegen-units = 1    # Serialized codegen for low-memory devices (e.g., Raspberry Pi 3 with 1GB RAM)
 strip = true          # Remove debug symbols
 panic = "abort"      # Reduce binary size
 
