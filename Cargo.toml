@@ -280,7 +280,7 @@ ci-all = [
 
 [profile.release]
 opt-level = "z"      # Optimize for size
-lto = "fat"          # Maximum cross-crate optimization for smaller binaries
+lto = "thin"         # "fat" causes recursion_limit overflow with matrix-sdk async state machines
 codegen-units = 8    # Higher than upstream (1) to avoid recursion_limit overflow with matrix-sdk
 strip = true          # Remove debug symbols
 panic = "abort"      # Reduce binary size
