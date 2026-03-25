@@ -282,8 +282,8 @@ ci-all = [
 opt-level = "z"      # Optimize for size
 lto = "fat"          # Maximum cross-crate optimization for smaller binaries
 codegen-units = 1    # Serialized codegen for low-memory devices (e.g., Raspberry Pi 3 with 1GB RAM)
-strip = true          # Remove debug symbols
-panic = "abort"      # Reduce binary size
+strip = false         # Keep debug symbols for backtrace
+panic = "unwind"     # Allow backtrace on panic (abort hides crash cause)
 
 [profile.release-fast]
 inherits = "release"
